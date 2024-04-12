@@ -1,0 +1,1274 @@
+---
+title: "GongLabProject"
+output: html_document
+date: "2023-09-18"
+---
+
+
+```{r}
+# TODO: 3 tasks
+
+ 
+# box plot / violin for specific gene
+# 2 wk vs control for specific genes
+
+# anything in top table for cov 2wk vs control that has adj p value < 0.05
+
+# 29 plots 
+
+# just 2 weeks vs control is fine (No 6 weeks)
+
+
+
+
+# see if there are any paired comparison graphs we can put out
+# exploring visual options for paired data
+
+
+
+
+# glmnet 
+```
+
+
+
+
+```{r}
+# Install and load the required package
+if (!require(readxl)) {
+  install.packages("readxl")  
+  library(readxl)
+}
+
+if (!require(openxlsx)) {
+  install.packages("openxlsx")
+  library(openxlsx)
+}
+
+# 1. Read the data from the Excel file
+data <- read_excel("C:\\Users\\antho\\Desktop\\Gong Lab\\MassSpec_name_simplified_no_NA.xlsx")
+
+# 2. Count non-empty cells for each column (sample)
+protein_counts <- sapply(data, function(col) sum(!is.na(col) & col != "NaN"))
+
+# 3. Create a data frame with sample names and protein counts
+result_table <- data.frame(
+  'Sample Name' = names(protein_counts),
+  'Number of Proteins' = protein_counts
+)
+
+print(result_table)
+```
+
+```{r}
+# Optionally, write the result to a new Excel file using the writexl package
+if (!require(writexl)) {
+  install.packages("writexl")
+}
+
+write_xlsx(result_table, "v2_NumProteinsPerSamples.xlsx")
+```
+
+
+
+```{r}
+# Install and load the required packages
+if (!require(ggplot2)) {
+  install.packages("ggplot2")
+}
+
+library(ggplot2)
+
+
+# 2. Create a categorical variable for grouping
+samples <- names(protein_counts)
+group <- character(length(samples))
+group[grep("ctrl", samples)] <- "control"
+group[grep("2wk", samples, ignore.case = TRUE)] <- "Covid 2-week"
+group[grep("6wk", samples, ignore.case = TRUE)] <- "Covid 6-week"
+
+# Create the result dataframe
+result_df <- data.frame(
+  'Sample' = samples,
+  'Protein_Count' = protein_counts,
+  'Group' = group
+)
+
+# Check for unclassified samples
+unclassified_samples <- result_df[is.na(result_df$Group) | result_df$Group == "", ]
+#print(unclassified_samples)
+
+# Add a new set of rows for the combined "All Covid" group
+all_covid_df <- result_df[result_df$Group %in% c("Covid 2-week", "Covid 6-week"), ]
+all_covid_df$Group <- "All Covid"
+result_df <- rbind(result_df, all_covid_df)
+
+# Order the factor levels for the plot
+result_df$Group <- factor(result_df$Group, levels = c("control", "Covid 2-week", "Covid 6-week", "All Covid"))
+
+# 3. Plot the data
+ggplot(result_df, aes(x = Group, y = Protein_Count)) +
+  geom_boxplot() +
+  labs(title = "Comparison of Protein Counts by Sample Group", y = "Number of Proteins") +
+  theme_minimal()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+# START HERE
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+
+if (!require(readxl)) {
+  install.packages("readxl")
+  library(readxl)
+}
+
+if (!require(openxlsx)) {
+  install.packages("openxlsx")
+  library(openxlsx)
+}
+
+#BiocManager::install("edgeR")
+library(edgeR)
+
+new_data <- read_excel("C:\\Users\\antho\\Desktop\\Gong Lab\\v3\\clean_project_data.xlsx")
+
+
+
+new_data <- new_data[,-c(2:6)]
+
+#new_data[new_data == "NaN"] <- "0"
+
+
+
+#write.xlsx(new_data, "v2_processed_data_final.xlsx")
+
+
+#counts <- read.xlsx("C:\\Users\\antho\\Desktop\\Gong Lab\\v2_processed_data_final.xlsx")
+#head(counts)
+
+new_data
+```
+
+
+
+```{r}
+library(edgeR)
+
+# Assuming your data is stored in the variable 'counts'
+numeric_data <- new_data[,-1]  # Exclude the first column
+
+# Convert the character columns to numeric
+numeric_data[] <- lapply(numeric_data, as.numeric)
+
+# Convert to matrix format (if it's not already in that format)
+if(!is.matrix(numeric_data)) {
+  numeric_data <- as.matrix(numeric_data)
+}
+
+
+```
+
+
+```{r}
+y <- numeric_data
+y <- log2(y + 1)
+
+y
+```
+
+
+```{r}
+#cutoff <- 1
+#drop <- which(apply(cpm(d0), 1, max) < cutoff)
+#d <- d0[-drop,] 
+dim(y) # number of genes left
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# PART 3 (LIMMA)
+
+# Create group based on column names
+group <- ifelse(grepl("2wk", colnames(y)) & grepl("Cov", colnames(y)), "Covid_2_weeks",
+         ifelse(grepl("6wk", colnames(y)) & grepl("Cov", colnames(y)), "Covid_6_weeks",
+         ifelse(grepl("2wk", colnames(y)) & grepl("ctrl", colnames(y)), "No_Covid_2_weeks",
+         ifelse(grepl("6wk", colnames(y)) & grepl("ctrl", colnames(y)), "No_Covid_6_weeks", NA))))
+
+
+
+
+# all of coefficients are relative to no_covid group
+group <- relevel(factor(group), ref = "No_Covid_6_weeks")
+
+
+# Convert group to a factor
+group_factor <- factor(group)
+
+```
+
+
+```{r}
+group
+```
+
+
+
+
+```{r}
+# PCA TEST
+options(max.print=1000)
+library(factoextra)
+library(ggplot2)
+
+y_clean <- y[apply(y, 1, function(row) all(is.finite(row))), ]
+
+pca_test <- prcomp(y_clean, scale=TRUE)
+
+summary(pca_test)
+```
+
+```{r}
+# Assuming 'y' is your data matrix
+
+# Replace Inf/NA values with appropriate statistics or remove them
+# Here's a simple example where you might replace NA with the column mean
+y[is.na(y)] <- apply(y, 2, function(col) mean(col, na.rm = TRUE))
+y[is.infinite(y)] <- apply(y, 2, function(col) mean(col[is.finite(col)], na.rm = TRUE))
+
+```
+
+```{r}
+pca_result <- prcomp(t(y_clean), scale. = TRUE)  # Transpose y to get genes as variables
+
+```
+
+
+```{r}
+# Extract the scores for the first two principal components
+pca_data <- data.frame(PC1 = pca_result$x[, 1], PC2 = pca_result$x[, 2])
+
+# Add sample names or categories
+#pca_data$Group <- c('Covid_2_weeks', 'Covid_6_weeks', 'No_Covid_2_weeks', 'No_Covid_6_weeks')  # replace with actual group labels
+
+# Ensure Group is a factor for coloring in ggplot
+#pca_data$Group <- as.factor(pca_data$Group)
+
+```
+
+```{r}
+library(ggplot2)
+
+png(file = "PCA_Plot.png", res = 300, width = 6, height = 6, units = "in")
+
+ggplot(pca_data, aes(x = PC1, y = PC2, color = group_factor)) +
+  geom_point() +  # Add points
+  stat_ellipse(level = 0.64) +  # Add ellipses around groups
+  theme_minimal() +  # Optional: use a minimal theme for the plot
+  labs(title = "PCA Plot", x = "PC1", y = "PC2") +  # Add labels
+  theme_classic() + 
+  ylim(-60, 60)
+  
+dev.off()
+```
+
+
+
+
+
+```{r}
+library(readxl)
+library(stringr)
+
+col_names <- colnames(y)
+
+pair_info <- str_extract(col_names, "\\(pair[A-Za-z0-9]+\\)") # Extract pair info
+pair_info <- gsub("[\\(\\)]", "", pair_info) # Remove parentheses
+
+# Create a data frame mapping sample names to their pair IDs
+pair_df <- data.frame(SampleName = col_names, PairID = pair_info)
+
+
+# Now, use this pair information in your analysis
+# For example, you can match PairID with the samples in your expression data 'y'
+
+# Example: Adding PairID to the expression data 'y'
+# y$PairID <- pair_df$PairID[match(colnames(y), pair_df$SampleName)]
+
+# Continue with your analysis using this modified 'y' dataset
+
+#pair_df
+
+# Convert the PairID to a factor
+pair_df$PairID <- factor(pair_df$PairID)
+
+# Now pair_df$PairID is a factor that can be used in statistical analyses
+pair_factor <- factor(pair_df$PairID[match(colnames(y), pair_df$SampleName)])
+pair_factor
+
+
+```
+
+
+
+
+
+
+
+
+```{r}
+# PART 3 (NO VOOM, CONT)
+mm <- model.matrix(~0 + group)
+mm
+```
+
+
+```{r}
+mm <- model.matrix(~ group + pair_factor)
+
+mm
+```
+
+
+
+```{r}
+# PART 4
+
+fit <- lmFit(y, mm)
+head(coef(fit))
+```
+
+
+```{r}
+fit <- eBayes(fit)
+v3_top.table <- topTable(fit, coef = "groupNo_Covid_2_weeks", sort.by = "P", number = Inf)
+v3_top.table
+```
+
+
+
+
+
+
+
+
+
+```{r}
+contr <- makeContrasts(groupCovid_2_weeks - groupCovid_6_weeks, levels = colnames(coef(fit)))
+contr
+```
+
+```{r}
+tmp <- contrasts.fit(fit, contr)
+tmp <- eBayes(tmp)
+```
+
+```{r}
+v3_top.table <- topTable(tmp, sort.by = "P", n = Inf)
+v3_top.table
+```
+
+
+
+```{r}
+#options(max.print=30)
+
+# Find all columns that start with the string "Gene"
+gene_cols <- grep("^Gene", colnames(v3_top.table), value = TRUE)
+
+# Remove these columns from top.table
+v3_top.table[gene_cols] <- NULL
+
+
+
+test_data <- read_excel("C:\\Users\\antho\\Desktop\\Gong Lab\\MassSpec_name_simplified_no_NA.xlsx")
+
+
+
+test_data <- test_data[,-c(3:6)]
+
+#test_data[test_data == "NaN"] <- "0"
+
+
+
+write.xlsx(test_data, "test_data.xlsx")
+
+
+new_test <- read.xlsx("C:\\Users\\antho\\Desktop\\Gong Lab\\test_data.xlsx")
+
+
+# Extract gene names using row numbers from top.table
+gene_names <- new_test[as.numeric(rownames(v3_top.table)), 2]
+
+# Add the gene names to top.table
+v3_top.table$Gene <- gene_names
+
+
+#top.table$Gene <- rownames(top.table)
+v3_top.table <- v3_top.table[,c("Gene", names(v3_top.table)[1:6])]
+#write.table(v3_top.table, file = "v3_TopTable.txt", row.names = F, sep = "\t", quote = F)
+```
+
+
+
+
+```{r}
+v3_top.table
+
+#write.table(v3_top.table, file = "Covid_2wk_vs_Covid_6wk", row.names = F, sep = "\t", quote = F)
+write.csv(v3_top.table, file = "NoCovid_2wk_vs_NoCovid_6wk.csv")
+```
+
+
+
+
+
+
+
+
+```{r}
+# NEW
+
+new_fit <- eBayes(fit)
+new_fit
+```
+
+
+
+
+```{r}
+
+# NEW CONTINUED
+
+contrast_matrix <- makeContrasts(Covid2vsCovid6 = groupCovid_2_weeks - groupCovid_6_weeks, levels = mm)
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2)
+```
+
+```{r}
+# Find all columns that start with the string "Gene"
+gene_cols <- grep("^Gene", colnames(v3_topTable_pairs), value = TRUE)
+
+# Remove these columns from top.table
+v3_topTable_pairs[gene_cols] <- NULL
+
+
+
+test_data <- read_excel("C:\\Users\\antho\\Desktop\\Gong Lab\\MassSpec_name_simplified_no_NA.xlsx")
+
+
+
+test_data <- test_data[,-c(3:6)]
+
+#test_data[test_data == "NaN"] <- "0"
+
+
+
+write.xlsx(test_data, "test_data.xlsx")
+
+
+new_test <- read.xlsx("C:\\Users\\antho\\Desktop\\Gong Lab\\test_data.xlsx")
+
+
+# Extract gene names using row numbers from top.table
+gene_names <- new_test[as.numeric(rownames(v3_topTable_pairs)), 2]
+
+# Add the gene names to top.table
+v3_topTable_pairs$Gene <- gene_names
+
+
+#top.table$Gene <- rownames(top.table)
+v3_topTable_pairs <- v3_topTable_pairs[,c("Gene", names(v3_topTable_pairs)[1:6])]
+#write.table(v3_top.table, file = "v3_TopTable.txt", row.names = F, sep = "\t", quote = F)
+```
+
+
+```{r}
+v3_topTable_pairs
+```
+
+
+
+
+
+```{r}
+contr <- makeContrasts(groupCovid_2_weeks - groupNo_Covid, levels = colnames(coef(fit)))
+contr
+
+contr2 <- makeContrasts(groupCovid_6_weeks - groupNo_Covid, levels = colnames(coef(fit)))
+
+contr3 <- makeContrasts(groupCovid_6_weeks - groupCovid_2_weeks, levels = colnames(coef(fit)))
+
+# only choose the 2-week samples that have corresponding 6-week
+```
+
+```{r}
+tmp <- contrasts.fit(fit, contr)
+tmp <- eBayes(tmp)
+
+
+tmp2 <- contrasts.fit(fit, contr2)
+tmp2 <- eBayes(tmp2)
+
+
+tmp3 <- contrasts.fit(fit, contr3)
+tmp3 <- eBayes(tmp3)
+```
+
+
+```{r}
+v2_top.table <- topTable(tmp, sort.by = "P", n = Inf)
+v2_top.table
+```
+
+
+```{r}
+v2_top.table2 <- topTable(tmp2, sort.by = "P", n = Inf)
+v2_top.table2
+```
+
+```{r}
+v2_top.table3 <- topTable(tmp3, sort.by = "P", n = Inf)
+v2_top.table3
+```
+
+
+
+```{r}
+# How many DE genes are there?
+length(which(v2_top.table$adj.P.Val < 0.05))
+
+length(which(v2_top.table2$adj.P.Val < 0.05))
+
+length(which(v2_top.table3$adj.P.Val < 0.05))
+```
+
+
+```{r}
+# Find all columns that start with the string "Gene"
+gene_cols <- grep("^Gene", colnames(v2_top.table), value = TRUE)
+
+# Remove these columns from top.table
+v2_top.table[gene_cols] <- NULL
+
+
+
+test_data <- read_excel("C:\\Users\\antho\\Desktop\\Gong Lab\\MassSpec_name_simplified_no_NA.xlsx")
+
+
+
+test_data <- test_data[,-c(3:6)]
+
+#test_data[test_data == "NaN"] <- "0"
+
+
+
+write.xlsx(test_data, "test_data.xlsx")
+
+
+new_test <- read.xlsx("C:\\Users\\antho\\Desktop\\Gong Lab\\test_data.xlsx")
+
+
+# Extract gene names using row numbers from top.table
+gene_names <- new_test[as.numeric(rownames(v2_top.table)), 2]
+
+# Add the gene names to top.table
+v2_top.table$Gene <- gene_names
+
+
+#top.table$Gene <- rownames(top.table)
+v2_top.table <- v2_top.table[,c("Gene", names(v2_top.table)[1:6])]
+write.table(v2_top.table, file = "v2_TopTable.txt", row.names = F, sep = "\t", quote = F)
+```
+
+```{r}
+v2_top.table
+```
+
+```{r}
+write.csv(v2_top.table, file = "v2_TopTable_CSV.csv")
+```
+
+
+
+```{r}
+# ASSIGN GENE NAMES FOR TOP TABLE 2 (CONTROL VS COV-6WK)
+# Find all columns that start with the string "Gene"
+gene_cols2 <- grep("^Gene", colnames(v2_top.table2), value = TRUE)
+
+# Remove these columns from top.table
+v2_top.table2[gene_cols2] <- NULL
+
+
+
+test_data2 <- read_excel("C:\\Users\\antho\\Desktop\\Gong Lab\\MassSpec_name_simplified_no_NA.xlsx")
+
+
+
+test_data2 <- test_data2[,-c(3:6)]
+
+#test_data[test_data == "NaN"] <- "0"
+
+
+
+write.xlsx(test_data2, "test_data2.xlsx")
+
+
+new_test2 <- read.xlsx("C:\\Users\\antho\\Desktop\\Gong Lab\\test_data2.xlsx")
+
+
+# Extract gene names using row numbers from top.table
+gene_names2 <- new_test2[as.numeric(rownames(v2_top.table2)), 2]
+
+# Add the gene names to top.table
+v2_top.table2$Gene <- gene_names2
+
+
+v2_top.table2 <- v2_top.table2[,c("Gene", names(v2_top.table2)[1:6])]
+write.table(v2_top.table2, file = "v2_TopTable2.txt", row.names = F, sep = "\t", quote = F)
+```
+
+
+```{r}
+v2_top.table2
+```
+
+```{r}
+write.csv(v2_top.table2, file = "v2_TopTable2_CSV.csv")
+```
+
+
+
+```{r}
+# ASSIGN GENE NAMES FOR TOP TABLE 3 (COV-2WK VS COV-6WK)
+
+# Find all columns that start with the string "Gene"
+gene_cols3 <- grep("^Gene", colnames(v2_top.table3), value = TRUE)
+
+# Remove these columns from top.table
+v2_top.table3[gene_cols3] <- NULL
+
+
+
+test_data3 <- read_excel("C:\\Users\\antho\\Desktop\\Gong Lab\\MassSpec_name_simplified_no_NA.xlsx")
+
+
+
+test_data3 <- test_data[,-c(3:6)]
+
+
+
+write.xlsx(test_data3, "test_data3.xlsx")
+
+
+new_test3 <- read.xlsx("C:\\Users\\antho\\Desktop\\Gong Lab\\test_data3.xlsx")
+
+
+# Extract gene names using row numbers from top.table
+gene_names3 <- new_test3[as.numeric(rownames(v2_top.table3)), 2]
+
+# Add the gene names to top.table
+v2_top.table3$Gene <- gene_names3
+
+
+#top.table$Gene <- rownames(top.table)
+v2_top.table3 <- v2_top.table3[,c("Gene", names(v2_top.table3)[1:6])]
+write.table(v2_top.table3, file = "v2_TopTable3.txt", row.names = F, sep = "\t", quote = F)
+```
+
+```{r}
+v2_top.table3
+```
+
+```{r}
+write.csv(v2_top.table3, file = "v2_TopTable3_CSV.csv")
+```
+
+
+
+
+
+```{r}
+# VOLCANO PLOT
+
+library(ggplot2)
+
+# Calculate the negative log10 of the P-values
+v2_top.table$neg_log10_PValue <- -log10(v2_top.table$P.Value)
+
+# Filter data to get genes to label
+label_data <- v2_top.table[which(v2_top.table$adj.P.Val < 0.05 & abs(v2_top.table$logFC) > 1.5), ]
+#label_data <- v2_top.table[which(v2_top.table$adj.P.Val < 0.05), ]
+
+# Plotting
+volcano_plot <- ggplot(v2_top.table, aes(x=logFC, y=neg_log10_PValue)) +
+  geom_point(aes(color = adj.P.Val < 0.05), alpha=0.8) + # Color points based on adjusted p-value threshold
+  geom_text(data = label_data, aes(label = label_data$Gene), vjust = -1, size = 2.5) +
+  theme_minimal() +
+  labs(title="Volcano Plot",
+       x="Log2 Fold Change",
+       y="-Log10 P-value",
+       color="adj.P.Val < 0.05") +
+  scale_color_manual(values=c("grey", "red")) # Use red color for significant points
+
+print(volcano_plot)
+
+```
+
+
+```{r}
+# VOLCANO PLOT
+
+library(ggplot2)
+
+# Calculate the negative log10 of the P-values
+v2_top.table2$neg_log10_PValue <- -log10(v2_top.table2$P.Value)
+
+label_data2 <- v2_top.table2[which(v2_top.table2$adj.P.Val < 0.05 & abs(v2_top.table2$logFC) > 1), ]
+
+# Plotting
+volcano_plot2 <- ggplot(v2_top.table2, aes(x=logFC, y=neg_log10_PValue)) +
+  geom_point(aes(color =adj.P.Val < 0.05), alpha=0.8) + # Color points based on adjusted p-value threshold
+  geom_text(data = label_data2, aes(label = label_data2$Gene), vjust = -1, size = 2.5) +
+  theme_minimal() +
+  labs(title="Volcano Plot",
+       x="Log2 Fold Change",
+       y="-Log10 P-value",
+       color="adj.P.Val < 0.05") +
+  scale_color_manual(values=c("grey", "red")) # Use red color for significant points
+
+print(volcano_plot2)
+
+```
+
+```{r}
+# VOLCANO PLOT (COV-2WK VS COV-6WK)
+
+library(ggplot2)
+
+# Calculate the negative log10 of the P-values
+v2_top.table3$neg_log10_PValue <- -log10(v2_top.table3$P.Value)
+
+label_data3 <- v2_top.table3[which(v2_top.table3$adj.P.Val < 0.05 & abs(v2_top.table3$logFC) > 1), ]
+
+# Plotting
+volcano_plot3 <- ggplot(v2_top.table3, aes(x=logFC, y=neg_log10_PValue)) +
+  geom_point(aes(color =adj.P.Val < 0.05), alpha=0.8) + # Color points based on adjusted p-value threshold
+  geom_text(data = label_data3, aes(label = label_data3$Gene), vjust = -1, size = 2.5) +
+  theme_minimal() +
+  labs(title="Volcano Plot",
+       x="Log2 Fold Change",
+       y="-Log10 P-value",
+       color="adj.P.Val < 0.05") +
+  scale_color_manual(values=c("grey", "red")) # Use red color for significant points
+
+print(volcano_plot3)
+
+```
+
+
+
+
+
+
+```{r}
+# VIOLIN PLOT 1 (CONTROL VS COV-2WK)
+
+# Create a new factor variable 'Status' based on significance and direction of change
+threshold <- 0.05 # Adjust this threshold as needed for significance
+v2_top.table$Status <- factor(
+  ifelse(v2_top.table$adj.P.Val < threshold & v2_top.table$logFC > 0, "Up-regulated",
+         ifelse(v2_top.table$adj.P.Val < threshold & v2_top.table$logFC < 0, "Down-regulated", "Non-significant"))
+)
+
+
+ggplot(v2_top.table, aes(x = Status, y = logFC)) + 
+  geom_violin(trim = FALSE, fill="cyan") + 
+  geom_boxplot(width=0.1) +
+  labs(title="Distribution of logFC values", x="Status", y="logFC") +
+  theme_light()
+
+```
+
+
+```{r}
+# VIOLIN PLOT 2 (CONTROL VS COV-6WK)
+
+# Create a new factor variable 'Status' based on significance and direction of change
+threshold <- 0.05 # Adjust this threshold as needed for significance
+v2_top.table2$Status <- factor(
+  ifelse(v2_top.table2$adj.P.Val < threshold & v2_top.table2$logFC > 0, "Up-regulated",
+         ifelse(v2_top.table2$adj.P.Val < threshold & v2_top.table2$logFC < 0, "Down-regulated", "Non-significant"))
+)
+
+
+ggplot(v2_top.table2, aes(x = Status, y = logFC)) + 
+  geom_violin(trim = FALSE, fill="cyan") + 
+  geom_boxplot(width=0.1) +
+  labs(title="Distribution of logFC values", x="Status", y="logFC") +
+  theme_light()
+
+```
+
+```{r}
+# VIOLIN PLOT 3 (COV-2WK VS COV-6WK)
+
+# Create a new factor variable 'Status' based on significance and direction of change
+threshold <- 0.05 # Adjust this threshold as needed for significance
+v2_top.table3$Status <- factor(
+  ifelse(v2_top.table3$adj.P.Val < threshold & v2_top.table3$logFC > 0, "Up-regulated",
+         ifelse(v2_top.table3$adj.P.Val < threshold & v2_top.table3$logFC < 0, "Down-regulated", "Non-significant"))
+)
+
+
+ggplot(v2_top.table3, aes(x = Status, y = logFC)) + 
+  geom_violin(trim = FALSE, fill="cyan") + 
+  geom_boxplot(width=0.1) +
+  labs(title="Distribution of logFC values", x="Status", y="logFC") +
+  theme_light()
+
+```
+
+
+
+```{r}
+# HEATMAP (FIXED)
+library(gplots)
+
+png(file = "heatmap.png", res = 300, width = 6, height = 6, units = "in")
+
+top_N_genes <- head(v2_top.table[order(v2_top.table$adj.P.Val), ], 15)$Gene
+
+logFC_matrix <- cbind(
+  logFC_2wk_ctrl = v2_top.table[v2_top.table$Gene %in% top_N_genes, ]$logFC,
+  logFC_6wk_ctrl = v2_top.table2[v2_top.table2$Gene %in% top_N_genes, ]$logFC,
+  logFC_2wk_6wk = v2_top.table3[v2_top.table3$Gene %in% top_N_genes, ]$logFC
+)
+
+rownames(logFC_matrix) <- top_N_genes
+
+
+heatmap.2(logFC_matrix, 
+          main="Top Differentially Exp. Genes",
+          col=colorRampPalette(c("blue", "white", "red"))(255),
+          trace="none", 
+          scale="row",  # Scale by row to compare logFC across conditions
+          key.title="LogFC",
+          cexCol = 0.85,
+          margins=c(5, 8))
+
+
+dev.off()
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+v2_top.table$Gene[1:400]
+```
+
+
+
+
+```{r}
+# EnrichR Exploration
+
+
+#install.packages("enrichR")
+library(enrichR)
+
+
+genesToAnalyze <- v2_top.table$Gene[1:400]
+
+enrichment_results <- enrichr(genesToAnalyze, database = "GO_Biological_Process_2018")
+
+enrichment_results
+
+```
+
+
+```{r}
+# TODO:
+
+# UMAP - explore hierarchical clustering
+# Explore Cluster profiler --> R package download
+# GLMnet --> machine learning model to help best predict outcome
+
+
+# Given a gene, display a bar graph for each sample grouped by 3 groups.
+# Given a gene, display a violin or box-plot graph for each of the 3 groups.
+# Can also do Top-GO on top of Enricher
+
+```
+
+
+
+
+```{r}
+if(!require(dplyr)) {
+  install.packages("dplyr")
+  library(dplyr)
+}
+
+new_exp_data <- read_excel("C:\\Users\\antho\\Desktop\\Gong Lab\\MassSpec_name_simplified_no_NA.xlsx")
+
+new_exp_data <- new_exp_data[,-c(3:6)]
+new_exp_data <- new_exp_data[,-c(1:1)]
+
+
+gene_of_interest <- "ISG15"
+
+
+desired_exp <- new_exp_data %>%
+  filter(PG.Genes == gene_of_interest) %>%
+  select(starts_with("["))
+
+
+desired_exp <- desired_exp %>%
+  mutate(across(everything(), as.numeric))
+
+
+# Apply the log(x + 1) transformation to the rest of the data
+desired_exp <- desired_exp %>%
+  mutate(across(everything(), ~ ifelse(is.numeric(.), log(. + 1), .)))
+
+
+desired_exp
+
+```
+
+
+
+```{r}
+# Convert it into a data frame for plotting
+gene_df <- as.data.frame(t(desired_exp))
+colnames(gene_df) <- c("Expression")
+gene_df$Sample <- rownames(gene_df)
+#gene_df$Group <- ifelse(grepl("2wk", gene_df$Sample), "Covid_2_weeks",
+                       # ifelse(grepl("6wk", gene_df$Sample), "Covid_6_weeks", 
+                              # ifelse(grepl("ctrl", gene_df$Sample), "No_Covid", NA)))
+
+gene_df$Group <- ifelse(grepl("ctrl", gene_df$Sample), "1_No_Covid",
+                        ifelse(grepl("2wk", gene_df$Sample), "Covid_2_weeks", 
+                               ifelse(grepl("6wk", gene_df$Sample), "Covid_6_weeks", NA)))
+
+gene_df <- gene_df %>%
+  arrange(Group, Sample)
+
+
+gene_df$Sample <- factor(gene_df$Sample, levels = gene_df$Sample)
+
+
+# Create the bar graph with individual bars for each sample
+# use dot plot instead
+ggplot(gene_df, aes(x = Sample, y = Expression, fill = Group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = paste("Expression levels of", gene_of_interest),
+       x = "Sample",
+       y = "Expression Level (log-transformed)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # This rotates the x-axis labels for better visibility
+
+
+
+
+```
+
+
+
+```{r}
+
+# Create the violin plot for each group
+ggplot(gene_df, aes(x = Group, y = Expression, fill = Group)) +
+  geom_violin() +
+  labs(title = paste("Expression levels of", gene_of_interest),
+       x = "Group",
+       y = "Expression Level (log-transformed)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # This rotates the x-axis labels for better visibility
+
+```
+
+
+```{r}
+# ... [Rest of your data preparation code remains unchanged]
+
+# Create the box plot for each group
+ggplot(gene_df, aes(x = Group, y = Expression, fill = Group)) +
+  geom_boxplot() +
+  labs(title = paste("Expression levels of", gene_of_interest),
+       x = "Group",
+       y = "Expression Level (log-transformed)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # This rotates the x-axis labels for better visibility
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+#install.packages("glmnet")
+library(glmnet)
+
+```
+
+
+
+```{r}
+#new_exp_data <- new_exp_data[ ,-1]
+```
+
+
+
+```{r}
+X <- as.matrix(new_exp_data[ ,gene_df$Group=="Covid_2_weeks" | gene_df$Group=="1_No_Covid"])
+Y <- gene_df$Group[gene_df$Group=="Covid_2_weeks" | gene_df$Group=="1_No_Covid"] # this should be a numeric or factor vector
+```
+
+
+
+```{r}
+#X_imputed <- glmnet::makeX(X)
+
+#which(is.na(X), arr.ind = TRUE)
+
+missings <- which(is.na(X), arr.ind = TRUE)
+X <- X[-missings[,1],]
+
+
+fit <- glmnet(t(X), Y, alpha = 0.5, family="binomial") # alpha = 0.5 implies an equal mix of L1 and L2 penalty (elastic net). Use 1 for lasso and 0 for ridge.
+
+
+
+```
+
+
+
+
+```{r}
+plot(fit, xvar = "lambda", label = TRUE)
+
+```
+
+
+
+```{r}
+#rownames(coef(fit, s = 'lambda.min'))[coef(fit, s = 'lambda.min')[,1]!= 0]
+coef(fit, s = 'lambda.min')
+```
+
+
+
+
+
+
+
+
+
+```{r}
+if (!requireNamespace("BiocManager", quietly=TRUE))
+    install.packages("BiocManager")
+
+#BiocManager::install("clusterProfiler")
+library(clusterProfiler)
+
+```
+
+
+```{r}
+umap_df <- as.data.frame(t(new_exp_data))
+umap_df <- umap_df %>% mutate(across(everything(), as.numeric))
+data_to_cluster <- as.matrix(umap_df)
+
+dist_matrix <- dist(data_to_cluster)
+hclust_results <- hclust(dist_matrix)
+
+```
+```{r}
+plot(hclust_results, labels = gene_df$Group, hang = -1)
+
+```
+
+
+
+
+
+
+
+
+```{r}
+# UMAP HIERARCHICAL CLUSTERING - ~~WORKING (ALMOST)
+if(!require(umap)) {
+  install.packages("umap")
+  library(umap)
+}
+
+umap_df <- as.data.frame(t(new_exp_data))
+
+umap_df[umap_df == "NaN"] <- 0
+umap_df[is.na(umap_df)] <- 0
+
+umap_df <- umap_df %>%
+  mutate(across(everything(), as.numeric))
+
+umap_df <- umap_df[-1, ]
+
+
+
+
+
+umap_df
+```
+
+
+```{r}
+# Transpose the data since we want to cluster samples, not genes
+data_to_cluster <- t(as.matrix(umap_df))
+
+# Perform UMAP
+umap_results <- umap(data_to_cluster)$layout
+
+
+# Compute distance matrix
+dist_matrix <- dist(umap_results)
+
+
+# Perform hierarchical clustering
+hclust_results <- hclust(dist_matrix)
+
+plot(hclust_results, labels = gene_df$Group, hang = -1)
+
+
+```
+
+
+
+```{r}
+# Identify which values cannot be coerced to numeric
+non_numeric_indices <- sapply(umap_df, function(col) {
+  which(is.na(as.numeric(as.character(col))))
+})
+
+# Filter out columns without non-numeric values
+non_numeric_indices <- non_numeric_indices[sapply(non_numeric_indices, length) > 0]
+
+# Generate a data frame of problematic values
+problematic_values_df <- do.call(rbind, lapply(names(non_numeric_indices), function(col_name) {
+  problematic_vals <- umap_df[non_numeric_indices[[col_name]], col_name]
+  data.frame(Column = col_name, 
+             Row = non_numeric_indices[[col_name]], 
+             Value = problematic_vals, 
+             stringsAsFactors = FALSE)
+}))
+
+print(problematic_values_df)
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+# IGNORE (GARBAGE)
+if(!require(umap)) {
+  install.packages("umap")
+  library(umap)
+}
+
+umap_df <- as.data.frame(t(new_exp_data))
+
+# Check for non-numeric data
+non_numeric_cols <- sapply(umap_df, function(col) any(!is.na(as.numeric(as.character(col)))))
+print(non_numeric_cols)
+
+# Convert to numeric and handle NAs
+umap_df <- umap_df %>%
+  mutate(across(everything(), as.numeric)) %>%
+  na.omit()
+
+# Transpose the data since we want to cluster samples, not genes
+data_to_cluster <- t(as.matrix(umap_df))
+
+# Perform UMAP
+umap_results <- umap(data_to_cluster)$layout
+
+# Compute distance matrix
+dist_matrix <- dist(umap_results)
+
+# Perform hierarchical clustering
+hclust_results <- hclust(dist_matrix, method = "average")
+
+
+plot(umap_results[,1], umap_results[,2], col=gene_df$Group, pch=16, xlab="UMAP1", ylab="UMAP2")
+
+
+
+```
+
+
+
+
+
+```{r}
+# USE PCA plot instead of UMAP
+# use sample code with confidence ellipses
+
+
+# clusterProfiler and topGO
+
+
+#TODO:
+
+# PNG all plots, put in box
+# get code (TopGo and ClusterProfiler) and try to get it to work
+# pair-wise comparisons for 2wk and 6wk and just use 6 samples for this
+```
+
+
+
+
